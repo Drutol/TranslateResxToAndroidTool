@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -10,10 +11,14 @@ namespace TranslateResxToAndroidTool
 {
     class Program
     {
-        private const string AutoCreateFlag = "autoCreate";
+        private const string AutoCreateFlag = "-autoCreate";
+        private const string OutputFromMetadata = "-outputFromMetadata";
+        private const string MetaTargetAndroidFile = "Meta_TargetAndroidFile";
 
         static void Main(string[] args)
         {
+            var argsList = new List<string>(args);
+
             if (args.Length < 2)
             {
                 var versionString = Assembly.GetEntryAssembly()
@@ -24,19 +29,37 @@ namespace TranslateResxToAndroidTool
                 Console.WriteLine($"TranslateResxToAndroidTool v{versionString}");
                 Console.WriteLine($"----------");
                 Console.WriteLine($"Usage:");
-                Console.WriteLine($"resxtoandroid <input.resx> <output.xml> [-{AutoCreateFlag}]");
+                Console.WriteLine($"resxtoandroid <input.resx> <output.xml> [{AutoCreateFlag} {OutputFromMetadata}]");
+                Console.WriteLine($"");
+                Console.WriteLine($"If you want to use {OutputFromMetadata} then please make sure your .resx file contains key {MetaTargetAndroidFile}" +
+                                  $"with its value being set to its path.");
                 return;
             }
 
-            if (!File.Exists(args[0]))
+            if (!File.Exists(argsList[0]))
             {
                 Console.WriteLine($"Source file does not exist.");
                 return;
             }
 
-            var autoCreateOutput = args.Any(s => s.Equals(AutoCreateFlag));
+            var resxDocument = XDocument.Load(argsList[0]);
 
-            if (!File.Exists(args[1]))
+            var autoCreateOutput = argsList.Any(s => s.Equals(AutoCreateFlag));
+            var outputFromMetadata = argsList.Any(s => s.Equals(AutoCreateFlag));
+
+            if (outputFromMetadata)
+            {
+                var metadataDescendant = resxDocument.Descendants("data").FirstOrDefault(element =>
+                    element.Attribute("name")?.Value.Equals(MetaTargetAndroidFile) ?? false);
+                if (metadataDescendant == null)
+                {
+                    Console.WriteLine($"No metadata key found. ({MetaTargetAndroidFile})");
+                    return;
+                }
+                argsList.Insert(1, metadataDescendant.Descendants("value").First().Value);
+            }
+
+            if (!File.Exists(argsList[1]))
             {
                 if (!autoCreateOutput)
                 {
@@ -47,7 +70,8 @@ namespace TranslateResxToAndroidTool
                         return;
                     }
 
-                    var directoryPath = Path.GetDirectoryName(args[1]);
+                    var directoryPath = Path.GetDirectoryName(argsList[1]);
+
                     // create output file
                     if (!Directory.Exists(directoryPath))
                     {
@@ -56,19 +80,27 @@ namespace TranslateResxToAndroidTool
                 }
             }
 
-            var resxDocument = XDocument.Load(args[0]);
             var outputDocument = new StringBuilder();
             outputDocument.AppendLine("<resources>");
-            
+
+            var counter = 0;
             foreach (var xElement in resxDocument.Descendants("data"))
             {
+                var nodeValue = xElement.Descendants("value").First().Value;
+
+                if(nodeValue.Equals(MetaTargetAndroidFile))
+                    continue;
+
                 outputDocument.AppendLine(
-                    $"<string name=\"{xElement.Attribute("name").Value}\">{EscapeXml(xElement.Descendants("value").First().Value)}</string>");
+                    $"<string name=\"{xElement.Attribute("name").Value}\">{EscapeXml(nodeValue)}</string>");
+
+                counter++;
             }
 
             outputDocument.AppendLine("</resources>");
 
-            File.WriteAllText(args[1], outputDocument.ToString());
+            File.WriteAllText(argsList[1], outputDocument.ToString());
+            Console.WriteLine($"Done. Wrote {counter} nodes to {argsList[1]}.");
         }
 
         private static string EscapeXml(string value)
