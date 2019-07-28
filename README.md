@@ -1,6 +1,7 @@
 # TranslateResxToAndroidTool
 
 Extremely simple tool for transforming ResX files into Android xml files with string resources.
+Below you can find some steps to make it handy to use.
 
 ## Install/Uninstall
 
@@ -8,7 +9,7 @@ Extremely simple tool for transforming ResX files into Android xml files with st
 
 `dotnet tool uninstall --global TranslateResxToAndroidTool`
 
-## ExternalToolConfig
+## External Tool Config
 
 1. Tools -> External Tools
 
@@ -22,7 +23,7 @@ Extremely simple tool for transforming ResX files into Android xml files with st
 
 `/c resxtoandroid $(ItemPath) -autoCreate -outputFromMetadata`
 
-## Initial Directory
+### Initial Directory
 
 `$(SolutionDir)`
 
