@@ -11,9 +11,13 @@ namespace TranslateResxToAndroidTool
 {
     class Program
     {
+        private static bool _autoCreateOutput;
+        private static bool _outputFromMetadata;
+
         private const string AutoCreateFlag = "-autoCreate";
         private const string OutputFromMetadata = "-outputFromMetadata";
         private const string MetaTargetAndroidFile = "Meta_TargetAndroidFile";
+        private const string CultureTokenMarker = "{culture}";
 
         static void Main(string[] args)
         {
@@ -32,7 +36,7 @@ namespace TranslateResxToAndroidTool
                 Console.WriteLine($"resxtoandroid <input.resx> <output.xml> [{AutoCreateFlag} {OutputFromMetadata}]");
                 Console.WriteLine($"");
                 Console.WriteLine($"If you want to use {OutputFromMetadata} then please make sure your .resx file contains key {MetaTargetAndroidFile}" +
-                                  $"with its value being set to its path.");
+                                  $"with its value being set to its path. If you include \"{CultureTokenMarker}\" inside it will get replaced for each found culture.");
                 return;
             }
 
@@ -42,12 +46,29 @@ namespace TranslateResxToAndroidTool
                 return;
             }
 
-            var resxDocument = XDocument.Load(argsList[0]);
+            _autoCreateOutput = argsList.Any(s => s.Equals(AutoCreateFlag));
+            _outputFromMetadata = argsList.Any(s => s.Equals(OutputFromMetadata));
 
-            var autoCreateOutput = argsList.Any(s => s.Equals(AutoCreateFlag));
-            var outputFromMetadata = argsList.Any(s => s.Equals(AutoCreateFlag));
+            var resourceFiles = Directory.GetFiles(Path.GetDirectoryName(argsList[0]));
+            foreach (var resourceFile in resourceFiles.Where(s => s.EndsWith(".resx")))
+            {
+                WriteResourceFile(resourceFile);
+            }
+        }
 
-            if (outputFromMetadata)
+        private static void WriteResourceFile(string resourceFilePath)
+        {
+            var resxDocument = XDocument.Load(resourceFilePath);
+
+            var outputFile = string.Empty;
+            var cultureSuffix = string.Empty;
+
+            var tokens = Path.GetFileName(resourceFilePath).Split('.', StringSplitOptions.RemoveEmptyEntries);
+
+            if (tokens.Length == 3)
+                cultureSuffix = tokens[1];
+
+            if (_outputFromMetadata)
             {
                 var metadataDescendant = resxDocument.Descendants("data").FirstOrDefault(element =>
                     element.Attribute("name")?.Value.Equals(MetaTargetAndroidFile) ?? false);
@@ -56,21 +77,33 @@ namespace TranslateResxToAndroidTool
                     Console.WriteLine($"No metadata key found. ({MetaTargetAndroidFile})");
                     return;
                 }
-                argsList.Insert(1, metadataDescendant.Descendants("value").First().Value);
+
+                outputFile = metadataDescendant.Descendants("value").First().Value;
             }
 
-            if (!File.Exists(argsList[1]))
+            if (!string.IsNullOrEmpty(cultureSuffix) && !outputFile.Contains(CultureTokenMarker))
+                throw new ArgumentException(
+                    $"Localized resx files exist yet the output file does not contain \"{CultureTokenMarker}\". " +
+                    $"You have to include it in the template.");
+
+            if (outputFile.Contains(CultureTokenMarker))
             {
-                if (!autoCreateOutput)
+                outputFile = outputFile.Replace(CultureTokenMarker,
+                    string.IsNullOrEmpty(cultureSuffix) ? string.Empty : $"-{cultureSuffix}");
+            }
+
+            if (!Directory.Exists(Path.GetDirectoryName(outputFile)))
+            {
+                if (!_autoCreateOutput)
                 {
-                    Console.WriteLine($"Target file does not exist. Create it? (y/n)");
+                    Console.WriteLine($"Target file directory does not exist. Create it? (y/n)");
                     var response = Console.ReadLine();
                     if (response != "y")
                     {
                         return;
                     }
 
-                    var directoryPath = Path.GetDirectoryName(argsList[1]);
+                    var directoryPath = Path.GetDirectoryName(outputFile);
 
                     // create output file
                     if (!Directory.Exists(directoryPath))
@@ -88,7 +121,7 @@ namespace TranslateResxToAndroidTool
             {
                 var nodeValue = xElement.Descendants("value").First().Value;
 
-                if(nodeValue.Equals(MetaTargetAndroidFile))
+                if (nodeValue.Equals(MetaTargetAndroidFile))
                     continue;
 
                 outputDocument.AppendLine(
@@ -99,13 +132,13 @@ namespace TranslateResxToAndroidTool
 
             outputDocument.AppendLine("</resources>");
 
-            File.WriteAllText(argsList[1], outputDocument.ToString());
-            Console.WriteLine($"Done. Wrote {counter} nodes to {argsList[1]}.");
+            File.WriteAllText(outputFile, outputDocument.ToString());
+            Console.WriteLine($"Done. Wrote {counter} nodes to {outputFile}.");
         }
 
         private static string EscapeXml(string value)
         {
-            XmlDocument doc = new XmlDocument();
+            var doc = new XmlDocument();
             XmlNode node = doc.CreateElement("root");
             node.InnerText = value;
             return node.InnerXml;
