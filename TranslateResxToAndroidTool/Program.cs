@@ -141,7 +141,7 @@ namespace TranslateResxToAndroidTool
             var doc = new XmlDocument();
             XmlNode node = doc.CreateElement("root");
             node.InnerText = value;
-            return node.InnerXml;
+            return node.InnerXml.Replace("'", "\\'").Trim();
         }
     }
 }
